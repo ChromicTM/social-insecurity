@@ -22,6 +22,19 @@ def is_logged_in() -> bool:
     """
     return "user_id" in session
 
+def get_current_user_data() -> Optional[dict]:
+    """Returns the current user's data from the database.
+
+    Returns:
+        out (dict): The user's data.
+    """
+    get_user = f"""
+        SELECT *
+        FROM Users
+        WHERE id = {session["user_id"]};
+        """
+    return sqlite.query(get_user, one=True)
+
 @app.route("/", methods=["GET", "POST"])
 @app.route("/index", methods=["GET", "POST"])
 def index():
@@ -85,7 +98,8 @@ def stream(username: str):
     user = sqlite.query(get_user, one=True)
 
     if user is None or session["user_id"] != user["id"]:
-        return redirect(url_for("index"))
+        user_data = get_current_user_data()
+        return redirect(url_for("stream", username=user_data["username"]))
 
     if post_form.is_submitted():
         if post_form.image.data:
@@ -129,7 +143,8 @@ def comments(username: str, post_id: int):
     user = sqlite.query(get_user, one=True)
 
     if user is None or session["user_id"] != user["id"]:
-        return redirect(url_for("index"))
+        user_data = get_current_user_data()
+        return redirect(url_for("stream", username=user_data["username"]))
 
     if comments_form.is_submitted():
         insert_comment = f"""
@@ -177,7 +192,8 @@ def friends(username: str):
     user = sqlite.query(get_user, one=True)
 
     if user is None or session["user_id"] != user["id"]:
-        return redirect(url_for("index"))
+        user_data = get_current_user_data()
+        return redirect(url_for("friends", username=user_data["username"]))
 
     if friends_form.is_submitted():
         get_friend = f"""
