@@ -6,12 +6,21 @@ It also contains the SQL queries used for communicating with the database.
 
 from pathlib import Path
 
-from flask import current_app as app
+from flask import current_app as app, session
 from flask import flash, redirect, render_template, send_from_directory, url_for
 
 from social_insecurity import sqlite
 from social_insecurity.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
 
+from typing import Optional
+
+def is_logged_in() -> bool:
+    """Checks if the user is logged in.
+    
+    Returns:
+        out (bool): True if logged in, False otherwise.
+    """
+    return "user_id" in session
 
 @app.route("/", methods=["GET", "POST"])
 @app.route("/index", methods=["GET", "POST"])
@@ -40,6 +49,7 @@ def index():
         elif user["password"] != login_form.password.data:
             flash("Sorry, wrong password!", category="warning")
         elif user["password"] == login_form.password.data:
+            session["user_id"] = user["id"]     # Store the user's ID in the session
             return redirect(url_for("stream", username=login_form.username.data))
 
     elif register_form.is_submitted() and register_form.submit.data:
@@ -62,6 +72,10 @@ def stream(username: str):
 
     Otherwise, it reads the username from the URL and displays all posts from the user and their friends.
     """
+
+    if not is_logged_in():
+        return redirect(url_for("index"))
+
     post_form = PostForm()
     get_user = f"""
         SELECT *
@@ -69,6 +83,9 @@ def stream(username: str):
         WHERE username = '{username}';
         """
     user = sqlite.query(get_user, one=True)
+
+    if user is None or session["user_id"] != user["id"]:
+        return redirect(url_for("index"))
 
     if post_form.is_submitted():
         if post_form.image.data:
@@ -100,6 +117,9 @@ def comments(username: str, post_id: int):
 
     Otherwise, it reads the username and post id from the URL and displays all comments for the post.
     """
+    if not is_logged_in():
+        return redirect(url_for("index"))
+
     comments_form = CommentsForm()
     get_user = f"""
         SELECT *
@@ -107,6 +127,9 @@ def comments(username: str, post_id: int):
         WHERE username = '{username}';
         """
     user = sqlite.query(get_user, one=True)
+
+    if user is None or session["user_id"] != user["id"]:
+        return redirect(url_for("index"))
 
     if comments_form.is_submitted():
         insert_comment = f"""
@@ -141,6 +164,10 @@ def friends(username: str):
 
     Otherwise, it reads the username from the URL and displays all friends of the user.
     """
+
+    if not is_logged_in():
+        return redirect(url_for("index"))
+
     friends_form = FriendsForm()
     get_user = f"""
         SELECT *
@@ -148,6 +175,9 @@ def friends(username: str):
         WHERE username = '{username}';
         """
     user = sqlite.query(get_user, one=True)
+
+    if user is None or session["user_id"] != user["id"]:
+        return redirect(url_for("index"))
 
     if friends_form.is_submitted():
         get_friend = f"""
@@ -194,6 +224,10 @@ def profile(username: str):
 
     Otherwise, it reads the username from the URL and displays the user's profile.
     """
+
+    if not is_logged_in():
+        return redirect(url_for("index"))
+
     profile_form = ProfileForm()
     get_user = f"""
         SELECT *
@@ -202,7 +236,12 @@ def profile(username: str):
         """
     user = sqlite.query(get_user, one=True)
 
-    if profile_form.is_submitted():
+    if user is None:
+        return redirect(url_for("index"))
+    
+    is_current_user = session["user_id"] == user["id"]
+
+    if profile_form.is_submitted() and is_current_user:
         update_profile = f"""
             UPDATE Users
             SET education='{profile_form.education.data}', employment='{profile_form.employment.data}',
@@ -213,7 +252,7 @@ def profile(username: str):
         sqlite.query(update_profile)
         return redirect(url_for("profile", username=username))
 
-    return render_template("profile.html.j2", title="Profile", username=username, user=user, form=profile_form)
+    return render_template("profile.html.j2", title="Profile", username=username, user=user, form=profile_form, show_edit=is_current_user)
 
 
 @app.route("/uploads/<string:filename>")
