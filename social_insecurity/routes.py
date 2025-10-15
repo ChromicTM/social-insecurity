@@ -35,12 +35,7 @@ def get_current_user_data() -> Optional[dict]:
     Returns:
         out (dict): The user's data.
     """
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE id = {session["user_id"]};
-        """
-    return sqlite.query(get_user, one=True)
+    return sqlite.get_user_data(id=session["user_id"])
 
 @app.before_request
 def rate_limit_post_requests():
@@ -71,19 +66,23 @@ def index():
 
     If no form was submitted, it simply renders the index page.
     """
+    if is_logged_in():
+        user = get_current_user_data()
+
+        if user is None:
+            return redirect(url_for("logout"))
+        
+        return redirect(url_for("stream", username=user["username"]))
+    
     index_form = IndexForm()
     login_form = index_form.login
     register_form = index_form.register
 
     if login_form.is_submitted() and login_form.submit.data:
-        get_user = f"""
-            SELECT *
-            FROM Users
-            WHERE username = '{login_form.username.data}';
-            """
-        user = sqlite.query(get_user, one=True)
+        user_password = sqlite.get_user_password(login_form.username.data)
+        user_id = sqlite.get_user_id(login_form.username.data)
 
-        if user is None:
+        if user_password is None:
             flash("Sorry, this user does not exist!", category="warning")
         elif login_attempts.get(login_form.username.data, {}).get("attempts", 0) >= app.config["MAX_LOGIN_ATTEMPTS"]:
             if login_attempts[login_form.username.data]["last_attempt"] < time.time() + app.config["LOGIN_COOLDOWN"]:
@@ -93,28 +92,19 @@ def index():
                     "attempts": 0,
                     "last_attempt": 0
                 }
-        elif user["password"] != login_form.password.data:
+        elif user_password != login_form.password.data:
             flash("Sorry, wrong password!", category="warning")
-            login_attempts[login_form.username.data] = {
-                "attempts": login_attempts.get(login_form.username.data, {}).get("attempts", 0) + 1,
-                "last_attempt": time.time()
-            }
-            print(login_attempts[login_form.username.data])
-        elif user["password"] == login_form.password.data:
-            session["user_id"] = user["id"]     # Store the user's ID in the session
-            login_attempts[login_form.username.data] = {
-                "attempts": 0,
-                "last_attempt": 0
-            }
-            flash("You have successfully logged in!", category="success")
+        elif user_password == login_form.password.data:
+            session["user_id"] = user_id     # Store the user's ID in the session
             return redirect(url_for("stream", username=login_form.username.data))
 
     elif register_form.is_submitted() and register_form.submit.data:
-        insert_user = f"""
-            INSERT INTO Users (username, first_name, last_name, password)
-            VALUES ('{register_form.username.data}', '{register_form.first_name.data}', '{register_form.last_name.data}', '{register_form.password.data}');
-            """
-        sqlite.query(insert_user)
+        ok = sqlite.create_user(register_form.username.data, register_form.first_name.data, register_form.last_name.data, register_form.password.data)
+
+        if not ok:
+            flash("Failed to create user!", category="warning")
+            return redirect(url_for("index"))
+        
         flash("User successfully created!", category="success")
         return redirect(url_for("index"))
 
@@ -134,12 +124,7 @@ def stream(username: str):
         return redirect(url_for("index"))
 
     post_form = PostForm()
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE username = '{username}';
-        """
-    user = sqlite.query(get_user, one=True)
+    user = sqlite.get_user_data(username)
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
@@ -150,10 +135,11 @@ def stream(username: str):
         return redirect(url_for("stream", username=user_data["username"]))
 
     if post_form.is_submitted():
+
         filename = secure_filename(post_form.image.data.filename)
 
         extension = Path(filename).suffix
-        if extension not in Config.ALLOWED_EXTENSIONS:
+        if extension and extension not in app.config["ALLOWED_EXTENSIONS"]:
             return redirect(url_for("stream", username=username))
 
         if post_form.image.data:
@@ -174,20 +160,14 @@ def stream(username: str):
             path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / filename
             post_form.image.data.save(path)
 
-        insert_post = f"""
-            INSERT INTO Posts (u_id, content, image, creation_time)
-            VALUES ({user["id"]}, '{post_form.content.data}', '{filename}', CURRENT_TIMESTAMP);
-            """
-        sqlite.query(insert_post)
+        ok = sqlite.create_post(user["id"], post_form.content.data, filename)
+
+        if not ok:
+            flash("Failed to create post!", category="warning")
+
         return redirect(url_for("stream", username=username))
 
-    get_posts = f"""
-         SELECT p.*, u.*, (SELECT COUNT(*) FROM Comments WHERE p_id = p.id) AS cc
-         FROM Posts AS p JOIN Users AS u ON u.id = p.u_id
-         WHERE p.u_id IN (SELECT u_id FROM Friends WHERE f_id = {user["id"]}) OR p.u_id IN (SELECT f_id FROM Friends WHERE u_id = {user["id"]}) OR p.u_id = {user["id"]}
-         ORDER BY p.creation_time DESC;
-        """
-    posts = sqlite.query(get_posts)
+    posts = sqlite.get_posts(user["id"])
     return render_template("stream.html.j2", title="Stream", username=username, form=post_form, posts=posts)
 
 
@@ -203,41 +183,21 @@ def comments(username: str, post_id: int):
         return redirect(url_for("index"))
 
     comments_form = CommentsForm()
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE username = '{username}';
-        """
-    user = sqlite.query(get_user, one=True)
+    user = sqlite.get_user_data(username)
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
 
         if user_data is None:
             return redirect(url_for("index"))
-        
+
         return redirect(url_for("stream", username=user_data["username"]))
 
     if comments_form.is_submitted():
-        insert_comment = f"""
-            INSERT INTO Comments (p_id, u_id, comment, creation_time)
-            VALUES ({post_id}, {user["id"]}, '{comments_form.comment.data}', CURRENT_TIMESTAMP);
-            """
-        sqlite.query(insert_comment)
+        sqlite.create_comment(post_id, user["id"], comments_form.comment.data)
 
-    get_post = f"""
-        SELECT *
-        FROM Posts AS p JOIN Users AS u ON p.u_id = u.id
-        WHERE p.id = {post_id};
-        """
-    get_comments = f"""
-        SELECT DISTINCT *
-        FROM Comments AS c JOIN Users AS u ON c.u_id = u.id
-        WHERE c.p_id={post_id}
-        ORDER BY c.creation_time DESC;
-        """
-    post = sqlite.query(get_post, one=True)
-    comments = sqlite.query(get_comments)
+    post = sqlite.get_post(post_id)
+    comments = sqlite.get_comments(post_id)
     return render_template(
         "comments.html.j2", title="Comments", username=username, form=comments_form, post=post, comments=comments
     )
@@ -256,34 +216,19 @@ def friends(username: str):
         return redirect(url_for("index"))
 
     friends_form = FriendsForm()
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE username = '{username}';
-        """
-    user = sqlite.query(get_user, one=True)
+    user = sqlite.get_user_data(username)
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
 
         if user_data is None:
             return redirect(url_for("index"))
-        
+
         return redirect(url_for("friends", username=user_data["username"]))
 
     if friends_form.is_submitted():
-        get_friend = f"""
-            SELECT *
-            FROM Users
-            WHERE username = '{friends_form.username.data}';
-            """
-        friend = sqlite.query(get_friend, one=True)
-        get_friends = f"""
-            SELECT f_id
-            FROM Friends
-            WHERE u_id = {user["id"]};
-            """
-        friends = sqlite.query(get_friends)
+        friend = sqlite.get_user_data(friends_form.username.data)
+        friends = sqlite.get_friends(user["id"])
 
         if friend is None:
             flash("User does not exist!", category="warning")
@@ -292,19 +237,15 @@ def friends(username: str):
         elif friend["id"] in [friend["f_id"] for friend in friends]:
             flash("You are already friends with this user!", category="warning")
         else:
-            insert_friend = f"""
-                INSERT INTO Friends (u_id, f_id)
-                VALUES ({user["id"]}, {friend["id"]});
-                """
-            sqlite.query(insert_friend)
+            ok = sqlite.add_friend(user["id"], friend["id"])
+
+            if not ok:
+                flash("Failed to add friend!", category="warning")
+                return redirect(url_for("friends", username=username))
+
             flash("Friend successfully added!", category="success")
 
-    get_friends = f"""
-        SELECT *
-        FROM Friends AS f JOIN Users as u ON f.f_id = u.id
-        WHERE f.u_id = {user["id"]} AND f.f_id != {user["id"]};
-        """
-    friends = sqlite.query(get_friends)
+    friends = sqlite.get_friend_datas(user["id"])
     return render_template("friends.html.j2", title="Friends", username=username, friends=friends, form=friends_form)
 
 
@@ -321,12 +262,7 @@ def profile(username: str):
         return redirect(url_for("index"))
 
     profile_form = ProfileForm()
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE username = '{username}';
-        """
-    user = sqlite.query(get_user, one=True)
+    user = sqlite.get_user_data(username)
 
     if user is None:
         return redirect(url_for("index"))
@@ -334,14 +270,12 @@ def profile(username: str):
     is_current_user = session["user_id"] == user["id"]
 
     if profile_form.is_submitted() and is_current_user:
-        update_profile = f"""
-            UPDATE Users
-            SET education='{profile_form.education.data}', employment='{profile_form.employment.data}',
-                music='{profile_form.music.data}', movie='{profile_form.movie.data}',
-                nationality='{profile_form.nationality.data}', birthday='{profile_form.birthday.data}'
-            WHERE username='{username}';
-            """
-        sqlite.query(update_profile)
+        ok = sqlite.update_profile(username, profile_form.education.data, profile_form.employment.data, profile_form.music.data, profile_form.movie.data, profile_form.nationality.data, profile_form.birthday.data)
+        
+        if not ok:
+            flash("Failed to update profile!", category="warning")
+            return redirect(url_for("profile", username=username))
+        
         return redirect(url_for("profile", username=username))
 
     return render_template("profile.html.j2", title="Profile", username=username, user=user, form=profile_form, show_edit=is_current_user)

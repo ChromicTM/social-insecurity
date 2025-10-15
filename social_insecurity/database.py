@@ -109,24 +109,216 @@ class SQLite3:
             conn.row_factory = sqlite3.Row
         return conn
 
-    def query(self, query: str, *args, one: bool = False) -> Any:
-        """Queries the database and returns the result.'
+    def get_user_data(self, username: Optional[str] = None, id: Optional[int] = None) -> Optional[dict]:
+        """Returns the user with the given username from the database."""
 
-        params:
-            query: The SQL query to execute.
-            one: Whether to return a single row or a list of rows.
-            args: Additional arguments to pass to the query.
+        response = None
 
-        returns: A single row, a list of rows or None.
+        if id is not None:
+            query = "SELECT username, id, first_name, last_name, education, employment, music, movie, nationality, birthday FROM Users WHERE id = ?"
+            cursor = self.connection.execute(query, (id,))
+            response = cursor.fetchone()
+        else:
+            query = "SELECT username, id, first_name, last_name, education, employment, music, movie, nationality, birthday FROM Users WHERE username = ?"
+            cursor = self.connection.execute(query, (username,))
+            response = cursor.fetchone()
 
-        """
-        cursor = self.connection.execute(query, args)
-        response = cursor.fetchone() if one else cursor.fetchall()
         cursor.close()
         self.connection.commit()
-        return response
 
-    # TODO: Add more specific query methods to simplify code
+        if response is None or len(response) == 0:
+            return None
+        
+        user = dict(response)
+
+        return user
+
+    def get_user_password(self, username: Optional[str]) -> Optional[str]:
+        """Returns the password of the user with the given username from the database."""
+
+        query = "SELECT password FROM Users WHERE username = ?"
+
+        cursor = self.connection.execute(query, (username,))
+        response = cursor.fetchone()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return None
+
+        return response[0]
+
+    def get_user_id(self, username: Optional[str]) -> Optional[int]:
+        """Returns the id of the user with the given username from the database."""
+
+        query = "SELECT id FROM Users WHERE username = ?"
+
+        cursor = self.connection.execute(query, (username,))
+        response = cursor.fetchone()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return None
+
+        return response[0]
+
+    def get_post(self, p_id) -> Optional[dict]:
+        query = "SELECT * FROM Posts AS p JOIN Users AS u ON p.u_id = u.id WHERE p.id = ?"
+
+        cursor = self.connection.execute(query, (p_id,))
+        response = cursor.fetchone()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return None
+
+        post = dict(response)
+
+        return post
+
+    def get_posts(self, u_id) -> list[dict]:
+        query = """
+            SELECT p.*, u.*, (SELECT COUNT(*) FROM Comments WHERE p_id = p.id) AS cc
+            FROM Posts AS p JOIN Users AS u ON u.id = p.u_id
+            WHERE p.u_id IN (SELECT u_id FROM Friends WHERE f_id = ?) OR p.u_id IN (SELECT f_id FROM Friends WHERE u_id = ?) OR p.u_id = ?
+            ORDER BY p.creation_time DESC
+        """
+
+        cursor = self.connection.execute(query, (u_id, u_id, u_id))
+        response = cursor.fetchall()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return []
+
+        posts = [dict(post) for post in response]
+
+        return posts
+
+    def get_comments(self, p_id) -> list[dict]:
+        query = """
+            SELECT DISTINCT *
+            FROM Comments AS c JOIN Users AS u ON c.u_id = u.id
+            WHERE c.p_id=?
+            ORDER BY c.creation_time DESC
+        """
+
+        cursor = self.connection.execute(query, (p_id,))
+        response = cursor.fetchall()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return []
+
+        comments = [dict(comment) for comment in response]
+
+        return comments
+
+    def get_friends(self, u_id) -> list[dict]:
+        query = "SELECT * FROM Friends WHERE u_id = ?"
+
+        cursor = self.connection.execute(query, (u_id,))
+        response = cursor.fetchall()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return []
+
+        friends = [dict(friend) for friend in response]
+
+        return friends
+
+    def get_friend_datas(self, u_id) -> list[dict]:
+        query = "SELECT * FROM Friends AS f JOIN Users as u ON f.f_id = u.id WHERE f.u_id = ? AND f.f_id != ?"
+
+        cursor = self.connection.execute(query, (u_id, u_id))
+        response = cursor.fetchall()
+        cursor.close()
+        self.connection.commit()
+
+        if response is None or len(response) == 0:
+            return []
+
+        friends = [dict(friend) for friend in response]
+
+        return friends
+
+    def create_user(self, username: Optional[str], first_name: Optional[str], last_name: Optional[str], password: Optional[str]) -> bool:
+        """Creates a new user in the database."""
+
+        try:
+            query = "INSERT INTO Users (username, first_name, last_name, password) VALUES (?, ?, ?, ?)"
+
+            cursor = self.connection.execute(query, (username, first_name, last_name, password))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
+
+    def create_post(self, u_id, content, image) -> bool:
+        try:
+            query = "INSERT INTO Posts (u_id, content, image, creation_time) VALUES (?, ?, ?, CURRENT_TIMESTAMP)"
+
+            cursor = self.connection.execute(query, (u_id, content, image))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
+
+    def create_comment(self, p_id, u_id, comment) -> bool:
+        try:
+            query = "INSERT INTO Comments (p_id, u_id, comment, creation_time) VALUES (?, ?, ?, CURRENT_TIMESTAMP)"
+
+            cursor = self.connection.execute(query, (p_id, u_id, comment))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
+
+    def update_profile(self, username, education, employment, music, movie, nationality, birthday) -> bool:
+        try:
+            query = "UPDATE Users SET education = ?, employment = ?, music = ?, movie = ?, nationality = ?, birthday = ? WHERE username = ?"
+
+            cursor = self.connection.execute(query, (education, employment, music, movie, nationality, birthday, username))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
+
+    def add_friend(self, u_id, f_id) -> bool:
+        try:
+            query = "INSERT INTO Friends (u_id, f_id) VALUES (?, ?)"
+
+            cursor = self.connection.execute(query, (u_id, f_id))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
 
     def _init_database(self, schema: PathLike | str) -> None:
         """Initializes the database with the supplied schema if it does not exist yet."""
