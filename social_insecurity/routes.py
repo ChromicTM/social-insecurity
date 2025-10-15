@@ -20,13 +20,6 @@ from typing import Optional
 last_post_times = {}
 upload_history = {}
 login_attempts = {}
-# login_attempts example:
-# {
-#     "username": {
-#         "attempts": 0, # Number of attempts
-#         "last_attempt": 0 # Unix timestamp
-#     }
-# }
 
 def is_logged_in() -> bool:
     """Checks if the user is logged in.
