@@ -6,8 +6,9 @@ It also contains the SQL queries used for communicating with the database.
 
 from pathlib import Path
 
-from flask import current_app as app, session
-from flask import flash, redirect, render_template, send_from_directory, url_for
+from flask import current_app as app, session, request
+from flask import flash, jsonify, redirect, render_template, send_from_directory, url_for
+import time
 
 from werkzeug.utils import secure_filename
 
@@ -15,6 +16,17 @@ from social_insecurity import Config, sqlite
 from social_insecurity.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
 
 from typing import Optional
+
+last_post_times = {}
+upload_history = {}
+login_attempts = {}
+# login_attempts example:
+# {
+#     "username": {
+#         "attempts": 0, # Number of attempts
+#         "last_attempt": 0 # Unix timestamp
+#     }
+# }
 
 def is_logged_in() -> bool:
     """Checks if the user is logged in.
@@ -36,6 +48,25 @@ def get_current_user_data() -> Optional[dict]:
         WHERE id = {session["user_id"]};
         """
     return sqlite.query(get_user, one=True)
+
+@app.before_request
+def rate_limit_post_requests():
+    if request.method != "POST":
+        return
+    
+    if is_logged_in():
+        user_id = session["user_id"]
+    else:
+        user_id = request.remote_addr
+    
+    now = time.time() * 1000
+    last_time = last_post_times.get(user_id, 0)
+    if now - last_time < app.config["COOLDOWN_MS"]:
+        wait_time = int(app.config["COOLDOWN_MS"] - (now - last_time))
+        return jsonify({
+            "error": f"Rate limit: wait {wait_time}ms before next POST."
+        }), 429
+    last_post_times[user_id] = now
 
 @app.route("/", methods=["GET", "POST"])
 @app.route("/index", methods=["GET", "POST"])
@@ -61,10 +92,28 @@ def index():
 
         if user is None:
             flash("Sorry, this user does not exist!", category="warning")
+        elif login_attempts.get(login_form.username.data, {}).get("attempts", 0) >= app.config["MAX_LOGIN_ATTEMPTS"]:
+            if login_attempts[login_form.username.data]["last_attempt"] < time.time() + app.config["LOGIN_COOLDOWN"]:
+                flash("Too many login attempts, please try again later.", category="danger")
+            else:
+                login_attempts[login_form.username.data] = {
+                    "attempts": 0,
+                    "last_attempt": 0
+                }
         elif user["password"] != login_form.password.data:
             flash("Sorry, wrong password!", category="warning")
+            login_attempts[login_form.username.data] = {
+                "attempts": login_attempts.get(login_form.username.data, {}).get("attempts", 0) + 1,
+                "last_attempt": time.time()
+            }
+            print(login_attempts[login_form.username.data])
         elif user["password"] == login_form.password.data:
             session["user_id"] = user["id"]     # Store the user's ID in the session
+            login_attempts[login_form.username.data] = {
+                "attempts": 0,
+                "last_attempt": 0
+            }
+            flash("You have successfully logged in!", category="success")
             return redirect(url_for("stream", username=login_form.username.data))
 
     elif register_form.is_submitted() and register_form.submit.data:
@@ -115,6 +164,20 @@ def stream(username: str):
             return redirect(url_for("stream", username=username))
 
         if post_form.image.data:
+            user_id = session["user_id"]
+            now = time.time()
+            
+            timestamps = upload_history.get(user_id, [])
+            timestamps = [t for t in timestamps if now - t < app.config["UPLOAD_WINDOW"]]
+            upload_limit = app.config["UPLOAD_LIMIT"]
+            if len(timestamps) >= upload_limit:
+                return jsonify({
+                    "error": "Too many uploads",
+                    "message": f"Limit is {upload_limit} uploads per {upload_limit} seconds."
+                }), 429
+            timestamps.append(now)
+            upload_history[user_id] = timestamps
+            
             path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / filename
             post_form.image.data.save(path)
 

@@ -22,3 +22,9 @@ class Config:
     UPLOADS_FOLDER_PATH = "uploads"  # Path relative to the Flask instance folder
     ALLOWED_EXTENSIONS = {".jpeg", ".jpg", ".gif", ".png", ".webp"}
     WTF_CSRF_ENABLED = False  # TODO: I should probably implement this wtforms feature, but it's not a priority
+    COOLDOWN_MS = 1000
+    UPLOAD_LIMIT = 5
+    UPLOAD_WINDOW = 60
+    MAX_LOGIN_ATTEMPTS = 5
+    LOGIN_COOLDOWN = 3600 # 1 hour
+    MAX_CONTENT_LENGTH = 1024 * 1024 # 1 MB
