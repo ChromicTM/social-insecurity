@@ -99,6 +99,10 @@ def stream(username: str):
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
+
+        if user_data is None:
+            return redirect(url_for("index"))
+
         return redirect(url_for("stream", username=user_data["username"]))
 
     if post_form.is_submitted():
@@ -144,6 +148,10 @@ def comments(username: str, post_id: int):
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
+
+        if user_data is None:
+            return redirect(url_for("index"))
+        
         return redirect(url_for("stream", username=user_data["username"]))
 
     if comments_form.is_submitted():
@@ -193,6 +201,10 @@ def friends(username: str):
 
     if user is None or session["user_id"] != user["id"]:
         user_data = get_current_user_data()
+
+        if user_data is None:
+            return redirect(url_for("index"))
+        
         return redirect(url_for("friends", username=user_data["username"]))
 
     if friends_form.is_submitted():
