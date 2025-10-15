@@ -154,6 +154,7 @@ def stream(username: str):
 
         extension = Path(filename).suffix
         if extension not in Config.ALLOWED_EXTENSIONS:
+            flash("Illegal file extension", category="warning")
             return redirect(url_for("stream", username=username))
 
         if post_form.image.data:
