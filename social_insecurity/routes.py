@@ -9,6 +9,8 @@ from pathlib import Path
 from flask import current_app as app, session
 from flask import flash, redirect, render_template, send_from_directory, url_for
 
+from werkzeug.utils import secure_filename
+
 from social_insecurity import sqlite
 from social_insecurity.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
 
@@ -106,13 +108,15 @@ def stream(username: str):
         return redirect(url_for("stream", username=user_data["username"]))
 
     if post_form.is_submitted():
+        filename = secure_filename(post_form.image.data.filename)
+
         if post_form.image.data:
-            path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / post_form.image.data.filename
+            path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / filename
             post_form.image.data.save(path)
 
         insert_post = f"""
             INSERT INTO Posts (u_id, content, image, creation_time)
-            VALUES ({user["id"]}, '{post_form.content.data}', '{post_form.image.data.filename}', CURRENT_TIMESTAMP);
+            VALUES ({user["id"]}, '{post_form.content.data}', '{filename}', CURRENT_TIMESTAMP);
             """
         sqlite.query(insert_post)
         return redirect(url_for("stream", username=username))
