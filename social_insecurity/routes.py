@@ -139,7 +139,7 @@ def stream(username: str):
         filename = secure_filename(post_form.image.data.filename)
 
         extension = Path(filename).suffix
-        if extension and extension not in app.config["ALLOWED_EXTENSIONS"]:
+        if filename and extension not in app.config["ALLOWED_EXTENSIONS"]:
             flash("Illegal file extension", category="warning")
             return redirect(url_for("stream", username=username))
 
