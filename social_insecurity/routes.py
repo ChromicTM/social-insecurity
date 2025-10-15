@@ -11,7 +11,7 @@ from flask import flash, redirect, render_template, send_from_directory, url_for
 
 from werkzeug.utils import secure_filename
 
-from social_insecurity import sqlite
+from social_insecurity import Config, sqlite
 from social_insecurity.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
 
 from typing import Optional
@@ -109,6 +109,10 @@ def stream(username: str):
 
     if post_form.is_submitted():
         filename = secure_filename(post_form.image.data.filename)
+
+        extension = Path(filename).suffix
+        if extension not in Config.ALLOWED_EXTENSIONS:
+            return redirect(url_for("stream", username=username))
 
         if post_form.image.data:
             path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / filename
