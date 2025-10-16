@@ -108,7 +108,7 @@ def index():
         flash("User successfully created!", category="success")
         return redirect(url_for("index"))
 
-    return render_template("index.html.j2", title="Welcome", form=index_form)
+    return render_template("index.html", title="Welcome", form=index_form)
 
 
 @app.route("/stream/<string:username>", methods=["GET", "POST"])
@@ -169,7 +169,7 @@ def stream(username: str):
         return redirect(url_for("stream", username=username))
 
     posts = sqlite.get_posts(user["id"])
-    return render_template("stream.html.j2", title="Stream", username=username, form=post_form, posts=posts)
+    return render_template("stream.html", title="Stream", username=username, form=post_form, posts=posts)
 
 
 @app.route("/comments/<string:username>/<int:post_id>", methods=["GET", "POST"])
@@ -200,7 +200,7 @@ def comments(username: str, post_id: int):
     post = sqlite.get_post(post_id)
     comments = sqlite.get_comments(post_id)
     return render_template(
-        "comments.html.j2", title="Comments", username=username, form=comments_form, post=post, comments=comments
+        "comments.html", title="Comments", username=username, form=comments_form, post=post, comments=comments
     )
 
 
@@ -247,7 +247,7 @@ def friends(username: str):
             flash("Friend successfully added!", category="success")
 
     friends = sqlite.get_friend_datas(user["id"])
-    return render_template("friends.html.j2", title="Friends", username=username, friends=friends, form=friends_form)
+    return render_template("friends.html", title="Friends", username=username, friends=friends, form=friends_form)
 
 
 @app.route("/profile/<string:username>", methods=["GET", "POST"])
@@ -279,7 +279,7 @@ def profile(username: str):
         
         return redirect(url_for("profile", username=username))
 
-    return render_template("profile.html.j2", title="Profile", username=username, user=user, form=profile_form, show_edit=is_current_user)
+    return render_template("profile.html", title="Profile", username=username, user=user, form=profile_form, show_edit=is_current_user)
 
 
 @app.route("/uploads/<string:filename>")
