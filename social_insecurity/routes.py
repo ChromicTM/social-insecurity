@@ -11,6 +11,7 @@ from flask import flash, jsonify, redirect, render_template, send_from_directory
 import time
 
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from social_insecurity import Config, sqlite
 from social_insecurity.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
@@ -79,11 +80,15 @@ def index():
     register_form = index_form.register
 
     if login_form.is_submitted() and login_form.submit.data:
+        if not login_form.username.data or not login_form.password.data:
+            flash("Please fill out all fields!", category="warning")
+            return redirect(url_for("index"))
+
         user_password = sqlite.get_user_password(login_form.username.data)
         user_id = sqlite.get_user_id(login_form.username.data)
 
         if user_password is None:
-            flash("Sorry, this user does not exist!", category="warning")
+            flash("Wrong username or password!", category="warning")
         elif login_attempts.get(login_form.username.data, {}).get("attempts", 0) >= app.config["MAX_LOGIN_ATTEMPTS"]:
             if login_attempts[login_form.username.data]["last_attempt"] < time.time() + app.config["LOGIN_COOLDOWN"]:
                 flash("Too many login attempts, please try again later.", category="danger")
@@ -92,14 +97,19 @@ def index():
                     "attempts": 0,
                     "last_attempt": 0
                 }
-        elif user_password != login_form.password.data:
-            flash("Sorry, wrong password!", category="warning")
-        elif user_password == login_form.password.data:
+        elif not check_password_hash(user_password, login_form.password.data):
+            flash("Wrong username or password!", category="warning")
+        else:
             session["user_id"] = user_id     # Store the user's ID in the session
             return redirect(url_for("stream", username=login_form.username.data))
 
     elif register_form.is_submitted() and register_form.submit.data:
-        ok = sqlite.create_user(register_form.username.data, register_form.first_name.data, register_form.last_name.data, register_form.password.data)
+        if not register_form.username.data or not register_form.password.data or not register_form.first_name.data or not register_form.last_name.data:
+            flash("Please fill out all fields!", category="warning")
+            return redirect(url_for("index"))
+
+        pw_hash = generate_password_hash(register_form.password.data)
+        ok = sqlite.create_user(register_form.username.data, register_form.first_name.data, register_form.last_name.data, pw_hash)
 
         if not ok:
             flash("Failed to create user!", category="warning")

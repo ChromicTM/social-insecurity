@@ -133,7 +133,7 @@ class SQLite3:
 
         return user
 
-    def get_user_password(self, username: Optional[str]) -> Optional[str]:
+    def get_user_password(self, username: str) -> Optional[str]:
         """Returns the password of the user with the given username from the database."""
 
         query = "SELECT password FROM Users WHERE username = ?"
@@ -148,7 +148,7 @@ class SQLite3:
 
         return response[0]
 
-    def get_user_id(self, username: Optional[str]) -> Optional[int]:
+    def get_user_id(self, username: str) -> Optional[int]:
         """Returns the id of the user with the given username from the database."""
 
         query = "SELECT id FROM Users WHERE username = ?"
@@ -248,7 +248,7 @@ class SQLite3:
 
         return friends
 
-    def create_user(self, username: Optional[str], first_name: Optional[str], last_name: Optional[str], password: Optional[str]) -> bool:
+    def create_user(self, username: str, first_name: str, last_name: str, password: str) -> bool:
         """Creates a new user in the database."""
 
         try:
@@ -311,6 +311,20 @@ class SQLite3:
             query = "INSERT INTO Friends (u_id, f_id) VALUES (?, ?)"
 
             cursor = self.connection.execute(query, (u_id, f_id))
+            cursor.close()
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(e)
+            return False
+
+    def delete_all_users(self) -> bool:
+        try:
+            query = "DELETE FROM Users"
+
+            cursor = self.connection.execute(query)
             cursor.close()
             self.connection.commit()
 
