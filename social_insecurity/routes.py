@@ -154,6 +154,7 @@ def stream(username: str):
             return redirect(url_for("stream", username=username))
 
         if post_form.image.data:
+            # TODO: add to overleaf
             user_id = session["user_id"]
             now = time.time()
             
@@ -161,10 +162,8 @@ def stream(username: str):
             timestamps = [t for t in timestamps if now - t < app.config["UPLOAD_WINDOW"]]
             upload_limit = app.config["UPLOAD_LIMIT"]
             if len(timestamps) >= upload_limit:
-                return jsonify({
-                    "error": "Too many uploads",
-                    "message": f"Limit is {upload_limit} uploads per {upload_limit} seconds."
-                }), 429
+                flash("Too many uploads, please try again later.", category="warning")
+                return redirect(url_for("stream", username=username))
             timestamps.append(now)
             upload_history[user_id] = timestamps
             
