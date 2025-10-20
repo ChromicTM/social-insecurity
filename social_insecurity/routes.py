@@ -90,7 +90,7 @@ def index():
         if user_password is None:
             flash("Wrong username or password!", category="warning")
         elif login_attempts.get(login_form.username.data, {}).get("attempts", 0) >= app.config["MAX_LOGIN_ATTEMPTS"]:
-            if login_attempts[login_form.username.data]["last_attempt"] < time.time() + app.config["LOGIN_COOLDOWN"]:
+            if login_attempts[login_form.username.data]["last_attempt"] + app.config["LOGIN_COOLDOWN"] > time.time():
                 flash("Too many login attempts, please try again later.", category="danger")
             else:
                 login_attempts[login_form.username.data] = {
@@ -99,7 +99,15 @@ def index():
                 }
         elif not check_password_hash(user_password, login_form.password.data):
             flash("Wrong username or password!", category="warning")
+            login_attempts[login_form.username.data] = {
+                "attempts": login_attempts.get(login_form.username.data, {}).get("attempts", 0) + 1,
+                "last_attempt": time.time()
+            }
         else:
+            login_attempts[login_form.username.data] = {
+                "attempts": 0,
+                "last_attempt": 0
+            }
             session["user_id"] = user_id     # Store the user's ID in the session
             return redirect(url_for("stream", username=login_form.username.data))
 
